@@ -1,0 +1,182 @@
+require 'logger'
+
+class PortTransformer < Midishark::Transformer::Base
+  def transform(input)
+    range = 41000..41007
+
+    return [] unless range.include?(input.source_port)
+
+    instrument = config.instruments[input.source_port - 41000]
+
+    return [] unless instrument
+
+    [build_result(instrument.device, 127, instrument.random_duration, instrument.random_note)]
+  end
+end
+
+class SourceOnlyTransformer < Midishark::Transformer::Base
+  def initialize(config)
+    super
+    @clients = {}
+    @logger = Logger.new("/tmp/midishark.log")
+
+    Signal.trap("USR2") do
+      @logger.info("Client list: #{@clients.inspect}")
+    end
+  end
+
+
+  def transform(input)
+    if input.source_ip =~ /^192.168/
+      [transform_for(input.source_ip, input.source_port)]
+    else
+      []
+    end
+  end
+
+private
+
+  def transform_for(ip, port)
+    # Assign client to instrument if needed.
+    add_client_if_needed(ip)
+
+    # Grab the instrument for this IP.
+    instrument = instrument_for(ip)
+
+    velocity = 127
+
+    # Grab random note/chord and a duration for the note.
+    duration = instrument.random_duration
+    tone = instrument.random_note
+
+    build_result(instrument.device, velocity, duration, tone)
+  end
+
+  def instrument_for(ip)
+    index = @clients[ip] % config.instruments.size
+    config.instruments[index]
+  end
+
+  def add_client_if_needed(ip)
+    unless @clients.has_key?(ip)
+      @clients[ip] = @clients.size
+    end
+  end
+end
+
+Midishark.configure do
+  tshark_command "tshark -l -ilo -o wlan.enable_decryption:TRUE -nn "\
+                 "-Tfields -Eseparator=\"/t\" -e ip.src -e ip.dst "\
+                 "-e tcp.srcport -e tcp.dstport -e icmp.code 2>/dev/null"
+
+  transformer PortTransformer
+
+  # Welcome
+  instrument do
+    device 0
+
+    min_duration 4_000_000
+    max_duration 6_000_000
+
+    note "G3", "Ab3", "Bb3", "Db4", "Eb4"
+    note "Eb3", "Bb3", "C4", "Db4", "F4"
+    note "F3", "Ab3", "Bb3", "Eb4", "G4"
+    note "Ab3", "Db4", "Eb4", "G4", "Bb4"
+  end
+
+  # BASS
+  instrument do
+    device 1
+
+    min_duration 6_000_000
+    max_duration 10_000_000
+
+    note "Eb2"
+    note "F2"
+    note "G2"
+    note "Bb2"
+    note "Db3"
+    note "Eb3"
+  end
+
+  # MID CHORDS 1
+  instrument do
+    device 2
+
+    min_duration 6_000_000
+    max_duration 8_000_000
+
+    note "G3", "Eb4"
+    note "Ab3", "F4"
+    note "Db3", "Bb3"
+    note "F4", "Db5"
+  end
+
+  # HIGH CHORDS 1
+  instrument do
+    device 3
+
+    min_duration 6_000_000
+    max_duration 8_000_000
+
+    note "Bb5", "G6"
+    note "Ab5", "F6"
+    note "Eb5", "C6"
+    note "Db5", "Bb5"
+  end
+
+  # PERC 1
+  instrument do
+    device 4
+
+    min_duration 500_000
+    max_duration 7_000_000
+
+    note "C3"
+    note "E3"
+    note "G3"
+  end
+
+  # MID CHORDS 2
+  instrument do
+    device 5
+
+    min_duration 6_000_000
+    max_duration 8_000_000
+
+    note "F3", "Eb4"
+    note "Ab3", "G4"
+    note "C4", "Bb4"
+    note "Db4", "C5"
+  end
+
+  # HIGH CHORDS 2
+  instrument do
+    device 6
+
+    min_duration 6_000_000
+    max_duration 8_000_000
+
+    note "G4", "F5"
+    note "Ab4", "G5"
+    note "Bb4", "Ab5"
+    note "Db5", "C6"
+  end
+
+  # PERC 2
+  instrument do
+    device 7
+
+    min_duration 500_000
+    max_duration 10_000_000
+
+    note "F4"
+    note "Ab4"
+    note "B4"
+    note "D5"
+    note "Eb5"
+    note "E5"
+    note "A5"
+    note "Bb5"
+  end
+end
