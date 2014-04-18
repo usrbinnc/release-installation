@@ -23,12 +23,25 @@ class SourceOnlyTransformer < Midishark::Transformer::Base
     Signal.trap("USR2") do
       @logger.info("Client list: #{@clients.inspect}")
     end
+
+    # Get the last 7 instruments as an array.
+    @chime = config.instruments.first
+    @other_instruments = config.instruments[1..-1]
   end
 
 
   def transform(input)
-    if input.source_ip =~ /^192.168/
-      [transform_for(input.source_ip, input.source_port)]
+    if input.source_ip =~ /^(192.168|10.0)/
+      notes = []
+
+      # Assign client to instrument if needed.
+      if add_client_if_needed(input.source_ip)
+        notes << build_result(@chime.device, 127, @chime.random_duration, @chime.random_note)
+      end
+
+      notes << transform_for(input.source_ip, input.source_port)
+
+      notes
     else
       []
     end
@@ -36,10 +49,7 @@ class SourceOnlyTransformer < Midishark::Transformer::Base
 
 private
 
-  def transform_for(ip, port)
-    # Assign client to instrument if needed.
-    add_client_if_needed(ip)
-
+  def transform_for(ip, port) 
     # Grab the instrument for this IP.
     instrument = instrument_for(ip)
 
@@ -53,23 +63,26 @@ private
   end
 
   def instrument_for(ip)
-    index = @clients[ip] % config.instruments.size
-    config.instruments[index]
+    index = @clients[ip] % @other_instruments.size
+    @other_instruments[index]
   end
 
   def add_client_if_needed(ip)
     unless @clients.has_key?(ip)
       @clients[ip] = @clients.size
+      true
+    else
+      false
     end
   end
 end
 
 Midishark.configure do
-  tshark_command "tshark -l -ilo -o wlan.enable_decryption:TRUE -nn "\
+  tshark_command "tshark -l -ibridge100 -o wlan.enable_decryption:TRUE -nn "\
                  "-Tfields -Eseparator=\"/t\" -e ip.src -e ip.dst "\
                  "-e tcp.srcport -e tcp.dstport -e icmp.code 2>/dev/null"
 
-  transformer PortTransformer
+  transformer SourceOnlyTransformer
 
   # Welcome
   instrument do
@@ -167,16 +180,14 @@ Midishark.configure do
   instrument do
     device 7
 
-    min_duration 500_000
+    min_duration 4_500_000
     max_duration 10_000_000
 
-    note "F4"
-    note "Ab4"
-    note "B4"
-    note "D5"
-    note "Eb5"
-    note "E5"
-    note "A5"
-    note "Bb5"
+    #note "F4"
+    note "F5"
+    note "Ab5"
+    #note "D5"  crazy
+    #note "A5"
+    #note "Bb5"
   end
 end
